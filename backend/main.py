@@ -12,10 +12,24 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
+async def auto_seed():
+    from database import get_db
+    db = await get_db()
+    try:
+        cursor = await db.execute("SELECT COUNT(*) FROM tenders")
+        count = (await cursor.fetchone())[0]
+        if count == 0:
+            logger.info("DB empty - auto-seeding...")
+            from routers.seed import seed_tenders
+            await seed_tenders()
+    finally:
+        await db.close()
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("Starting NovaCode Tender Intelligence API...")
     await init_db()
+    await auto_seed()
     scheduler_task = asyncio.create_task(start_scheduler())
     yield
     scheduler_task.cancel()
@@ -56,4 +70,5 @@ async def root():
 @app.get("/health")
 async def health():
     return {"status": "ok"}
+
 
