@@ -4,5 +4,5 @@ aiosqlite
 httpx
 beautifulsoup4
 lxml==6.1.0
-pydantic
+pydantic==2.46.4
 python-dotenv
