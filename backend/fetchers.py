@@ -32,9 +32,10 @@ async def fetch_sa_ocds(days_back: int = 7) -> list[dict]:
     date_from = (datetime.now() - timedelta(days=days_back)).strftime("%Y-%m-%d")
 
     # The OCDS API returns release packages — we page through them
-    base_url = "https://ocds-api.etenders.gov.za/api/OCDSReleasePackage"
+    base_url = "https://ocds-api.etenders.gov.za/api/v1/OCDSReleasePackage"
     params = {
         "dateFrom": date_from,
+        "dateTo": (datetime.now()).strftime("%Y-%m-%d"),
         "pageSize": 100,
         "pageNumber": 1,
     }
@@ -321,3 +322,4 @@ def _parse_date(date_str) -> str:
 
 def _slugify(text: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")
+
