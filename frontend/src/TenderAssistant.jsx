@@ -108,6 +108,7 @@ Respond ONLY with valid JSON, no markdown, no preamble.`,
 
       const data = await response.json();
       setProgress("Generating response draft...");
+      await new Promise(r => setTimeout(r, 5000));
 
       const raw = data.content?.find((b) => b.type === "text")?.text || "";
       const clean = raw.replace(/```json|```/g, "").trim();
@@ -478,6 +479,7 @@ function DraftSection({ label, text }) {
     </div>
   );
 }
+
 
 
 
