@@ -21,73 +21,42 @@ HEADERS = {
 # SOUTH AFRICA — Official OCDS API
 # ─────────────────────────────────────────────
 
-async def fetch_sa_ocds(days_back: int = 7) -> list[dict]:
-    """
-    Fetch tenders from SA National Treasury OCDS API.
-    Endpoint: https://ocds-api.etenders.gov.za
-    Swagger: https://ocds-api.etenders.gov.za/swagger/index.html
-    Returns tenders published in the last `days_back` days.
-    """
+async def fetch_sa_ocds(days_back: int = 30) -> list[dict]:
     tenders = []
-    date_from = (datetime.now() - timedelta(days=days_back)).strftime("%Y-%m-%d")
-
-    # The OCDS API returns release packages — we page through them
-    base_url = "https://ocds-api.etenders.gov.za/api/OCDSReleasePackage"
-    params = {
-        "dateFrom": date_from,
-        "dateTo": (datetime.now()).strftime("%Y-%m-%d"),
-        "pageSize": 100,
-        "pageNumber": 1,
-    }
-
     try:
-        async with httpx.AsyncClient(timeout=30, headers=HEADERS) as client:
-            while True:
-                resp = await client.get(base_url, params=params)
-                if resp.status_code != 200:
-                    logger.warning(f"SA OCDS API returned {resp.status_code}")
-                    break
-
-                data = resp.json()
-                releases = data.get("releases", [])
-                if not releases:
-                    break
-
-                for release in releases:
-                    tender_obj = release.get("tender", {})
-                    buyer = release.get("buyer", {})
-                    planning = release.get("planning", {})
-                    budget = planning.get("budget", {})
-
-                    # Map OCDS fields to our schema
-                    tender = {
-                        "external_id": f"ZA-OCDS-{release.get('ocid', '')}",
-                        "title": tender_obj.get("title", "Untitled"),
-                        "department": buyer.get("name", "Unknown Department"),
-                        "country": "ZA",
-                        "category": _map_sa_category(tender_obj.get("mainProcurementCategory", "")),
-                        "value_raw": _format_value(budget.get("amount", {}).get("amount"), "ZAR"),
-                        "value_zar": budget.get("budget", {}).get("amount", {}).get("amount"),
-                        "deadline": _parse_date(tender_obj.get("tenderPeriod", {}).get("endDate")),
-                        "published": _parse_date(release.get("date")),
-                        "reference": tender_obj.get("id", ""),
-                        "source": "SA National Treasury (OCDS API)",
-                        "portal_url": f"https://www.etenders.gov.za/Home/opportunities?id=1",
-                        "description": tender_obj.get("description", ""),
-                        "status": _map_sa_status(tender_obj.get("status", "")),
-                    }
-                    tenders.append(tender)
-
-                if len(releases) < params["pageSize"]:
-                    break
-                params["pageNumber"] += 1
-
+        async with httpx.AsyncClient(timeout=30, headers=HEADERS, verify=False) as client:
+            resp = await client.post(
+                "https://www.etenders.gov.za/Home/GetFilteredTenders",
+                data={"id": "1", "pageNumber": "1", "pageSize": "100", "searchText": "", "category": "", "province": "", "organOfState": ""},
+            )
+            if resp.status_code != 200:
+                logger.warning(f"SA eTenders portal returned {resp.status_code}")
+                return tenders
+            data = resp.json()
+            items = data if isinstance(data, list) else data.get("data", data.get("tenders", data.get("results", [])))
+            if not isinstance(items, list):
+                logger.warning(f"SA eTenders unexpected format: {type(data)}")
+                return tenders
+            for item in items:
+                title = item.get("Description") or item.get("TenderDescription") or item.get("title") or "Untitled"
+                dept = item.get("Department") or item.get("OrganOfState") or item.get("department") or "Unknown"
+                ref = item.get("TenderNo") or item.get("ReferenceNumber") or item.get("tenderNo") or ""
+                tender = {
+                    "external_id": f"ZA-ET-{ref or title[:30]}",
+                    "title": title, "department": dept, "country": "ZA",
+                    "category": _map_sa_category("services"),
+                    "value_raw": None, "value_zar": None,
+                    "deadline": _parse_date(item.get("ClosingDate") or item.get("closingDate") or ""),
+                    "published": _parse_date(item.get("AdvertisedDate") or item.get("advertisedDate") or ""),
+                    "reference": ref, "source": "SA National Treasury OCDS API",
+                    "portal_url": "https://www.etenders.gov.za/Home/opportunities?id=1",
+                    "description": item.get("description") or "", "status": "active",
+                }
+                tenders.append(tender)
     except Exception as e:
-        logger.error(f"SA OCDS fetch error: {e}")
-
+        logger.error(f"SA eTenders fetch error: {e}")
     logger.info(f"SA OCDS: fetched {len(tenders)} tenders")
     return tenders
-
 
 def _map_sa_category(ocds_cat: str) -> str:
     mapping = {
@@ -115,7 +84,7 @@ async def fetch_kenya_tenders() -> list[dict]:
     tenders = []
     url = "https://tenders.go.ke/website/tenders/index"
     try:
-        async with httpx.AsyncClient(timeout=20, headers={"User-Agent": HEADERS["User-Agent"]}) as client:
+        async with httpx.AsyncClient(timeout=20, headers={"User-Agent": HEADERS["User-Agent"]}, verify=False) as client:
             resp = await client.get(url, follow_redirects=True)
             soup = BeautifulSoup(resp.text, "html.parser")
 
@@ -157,7 +126,7 @@ async def fetch_zambia_tenders() -> list[dict]:
     tenders = []
     url = "https://www.zppa.org.zm/tenders"
     try:
-        async with httpx.AsyncClient(timeout=20, headers={"User-Agent": HEADERS["User-Agent"]}) as client:
+        async with httpx.AsyncClient(timeout=20, headers={"User-Agent": HEADERS["User-Agent"]}, verify=False) as client:
             resp = await client.get(url, follow_redirects=True)
             soup = BeautifulSoup(resp.text, "html.parser")
 
@@ -200,7 +169,7 @@ async def fetch_nigeria_tenders() -> list[dict]:
     tenders = []
     url = "https://www.bpp.gov.ng/tender-opportunities/"
     try:
-        async with httpx.AsyncClient(timeout=20, headers={"User-Agent": HEADERS["User-Agent"]}) as client:
+        async with httpx.AsyncClient(timeout=20, headers={"User-Agent": HEADERS["User-Agent"]}, verify=False) as client:
             resp = await client.get(url, follow_redirects=True)
             soup = BeautifulSoup(resp.text, "html.parser")
 
@@ -241,7 +210,7 @@ async def fetch_ghana_tenders() -> list[dict]:
     tenders = []
     url = "https://www.ppaghana.org/PpaGhana/advertised-tenders"
     try:
-        async with httpx.AsyncClient(timeout=20, headers={"User-Agent": HEADERS["User-Agent"]}) as client:
+        async with httpx.AsyncClient(timeout=20, headers={"User-Agent": HEADERS["User-Agent"]}, verify=False) as client:
             resp = await client.get(url, follow_redirects=True)
             soup = BeautifulSoup(resp.text, "html.parser")
 
@@ -322,5 +291,6 @@ def _parse_date(date_str) -> str:
 
 def _slugify(text: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")
+
 
 
