@@ -108,49 +108,8 @@ Respond ONLY with valid JSON, no markdown, no preamble.`,
 
       const data = await response.json();
       setProgress("Generating response draft...");
-      await new Promise(r => setTimeout(r, 5000));
-
-      const raw = data.content?.find((b) => b.type === "text")?.text || "";
-      const clean = raw.replace(/```json|```/g, "").trim();
-      const parsed = JSON.parse(clean);
-
-      // Now generate the full response draft
-      const draftResp = await fetch("https://novacode-tenders-api-production.up.railway.app/api/proxy/claude", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          model: "claude-haiku-4-5-20251001",
-          max_tokens: 4000,
-          system: `You are a tender response writer for NovaCode Consulting.
-${NOVACODE_PROFILE}
-Write professional, winning tender responses. Be specific, confident, and tailor every section to NovaCode's actual capabilities.
-Respond ONLY with valid JSON, no markdown, no preamble.`,
-          messages: [
-            {
-              role: "user",
-              content: `Based on this tender analysis: ${JSON.stringify(parsed)}
-              
-Generate a tender response draft as JSON with this structure:
-{
-  "executive_summary": "2-3 paragraph executive summary positioning NovaCode",
-  "company_overview": "1-2 paragraph company overview tailored to this tender",
-  "technical_approach": "3-4 paragraphs detailing NovaCode's technical approach to this specific scope",
-  "relevant_experience": "paragraph highlighting relevant NovaCode products and experience",
-  "team": "paragraph on the team (Don and Marnus as directors, can note additional team as required)",
-  "pricing_note": "guidance on pricing approach for this type of tender",
-  "compliance_checklist": ["item 1", "item 2", "item 3"]
-}`,
-            },
-          ],
-        }),
-      });
-
-      const draftData = await draftResp.json();
-      const draftRaw = draftData.content?.find((b) => b.type === "text")?.text || "";
-      const draftClean = draftRaw.replace(/```json|```/g, "").trim();
-      const draft = JSON.parse(draftClean);
-
-      setAnalysis({ ...parsed, draft });
+      const draft = parsed.draft || {};
+      setAnalysis({ ...parsed, draft: parsed.draft || {} });
       setStage("draft");
     } catch (err) {
       console.error(err);
