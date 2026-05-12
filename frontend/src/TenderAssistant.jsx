@@ -140,43 +140,43 @@ Contact: Cape Town & Pretoria
 
 1. EXECUTIVE SUMMARY
 
-${draft.executive_summary}
+${analysis.draft?.executive_summary || ""}
 
 ================================================================================
 
 2. COMPANY OVERVIEW
 
-${draft.company_overview}
+${analysis.draft?.company_overview || ""}
 
 ================================================================================
 
 3. TECHNICAL APPROACH
 
-${draft.technical_approach}
+${analysis.draft?.technical_approach || ""}
 
 ================================================================================
 
 4. RELEVANT EXPERIENCE
 
-${draft.relevant_experience}
+${analysis.draft?.relevant_experience || ""}
 
 ================================================================================
 
 5. TEAM
 
-${draft.team}
+${analysis.draft?.team || ""}
 
 ================================================================================
 
 6. PRICING
 
-${draft.pricing_note}
+${analysis.draft?.pricing_note || ""}
 
 ================================================================================
 
 7. COMPLIANCE CHECKLIST
 
-${draft.compliance_checklist?.map((item, i) => `${i + 1}. ${item}`).join("\n")}
+${analysis.draft?.compliance_checklist?.map((item, i) => `${i + 1}. ${item}`).join("\n")}
 
 ================================================================================
 
@@ -441,6 +441,7 @@ function DraftSection({ label, text }) {
     </div>
   );
 }
+
 
 
 
