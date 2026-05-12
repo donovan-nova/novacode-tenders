@@ -61,7 +61,7 @@ export default function TenderAssistant() {
 
       setProgress("Extracting requirements with Claude AI...");
 
-      const response = await fetch("https://api.anthropic.com/v1/messages", {
+      const response = await fetch("https://novacode-tenders-api-production.up.railway.app/api/proxy/claude", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -114,7 +114,7 @@ Respond ONLY with valid JSON, no markdown, no preamble.`,
       const parsed = JSON.parse(clean);
 
       // Now generate the full response draft
-      const draftResp = await fetch("https://api.anthropic.com/v1/messages", {
+      const draftResp = await fetch("https://novacode-tenders-api-production.up.railway.app/api/proxy/claude", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -478,3 +478,4 @@ function DraftSection({ label, text }) {
     </div>
   );
 }
+

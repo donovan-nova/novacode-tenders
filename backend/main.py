@@ -6,6 +6,7 @@ import logging
 
 from database import init_db
 from scheduler import start_scheduler
+from proxy import router_proxy
 from routers import tenders, sources, alerts, stats, seed
 
 logging.basicConfig(level=logging.INFO)
@@ -51,6 +52,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+app.include_router(router_proxy)
 app.include_router(tenders.router, prefix="/api/tenders", tags=["Tenders"])
 app.include_router(sources.router, prefix="/api/sources", tags=["Sources"])
 app.include_router(alerts.router, prefix="/api/alerts", tags=["Alerts"])
@@ -70,5 +72,7 @@ async def root():
 @app.get("/health")
 async def health():
     return {"status": "ok"}
+
+
 
 
