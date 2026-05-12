@@ -102,7 +102,8 @@ async def scrape_etenders(page) -> list[dict]:
 
     except Exception as e:
         print(f"etenders error: {e}")
-    print(f"etenders: scraped {len(tenders)} relevant tenders")
+    tenders = list(all_tenders.values())
+    print(f"etenders: scraped {len(tenders)} unique tenders")
     return tenders
 
 
@@ -270,6 +271,7 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
+
 
 
 
