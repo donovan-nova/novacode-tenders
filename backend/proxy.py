@@ -7,10 +7,12 @@ router_proxy = APIRouter()
 
 @router_proxy.post("/api/proxy/claude")
 async def claude_proxy(request: Request):
-    body = await request.json()
-    api_key = os.getenv("ANTHROPIC_API_KEY", "")
     try:
-        async with httpx.AsyncClient(timeout=120) as client:
+        body = await request.json()
+        api_key = os.getenv("ANTHROPIC_API_KEY", "")
+        if not api_key:
+            return JSONResponse({"error": "ANTHROPIC_API_KEY not set"}, status_code=500)
+        async with httpx.AsyncClient(timeout=180) as client:
             resp = await client.post(
                 "https://api.anthropic.com/v1/messages",
                 json=body,
@@ -20,6 +22,8 @@ async def claude_proxy(request: Request):
                     "content-type": "application/json",
                 },
             )
-            return JSONResponse(content=resp.json(), status_code=resp.status_code)
+            data = resp.json()
+            return JSONResponse(content=data, status_code=resp.status_code)
     except Exception as e:
-        return JSONResponse(content={"error": str(e)}, status_code=500)
+        import traceback
+        return JSONResponse({"error": str(e), "trace": traceback.format_exc()}, status_code=500)
