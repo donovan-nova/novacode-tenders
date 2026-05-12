@@ -107,9 +107,12 @@ Respond ONLY with valid JSON, no markdown, no preamble.`,
       });
 
       const data = await response.json();
+      const raw = data.content?.find((b) => b.type === "text")?.text || "";
+      const clean = raw.replace(/```json|```/g, "").trim();
+      const parsed = JSON.parse(clean);
       setProgress("Generating response draft...");
       const draft = parsed.draft || {};
-      setAnalysis({ ...parsed, draft: parsed.draft || {} });
+      setAnalysis({ ...parsed, draft });
       setStage("draft");
     } catch (err) {
       console.error(err);
