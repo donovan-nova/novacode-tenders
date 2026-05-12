@@ -127,7 +127,7 @@ async def scrape_gpw(page) -> list[dict]:
                     continue
 
                 score = score_relevance(title)
-                if score < 15:
+                if score < 5:
                     continue
 
                 dept = await cells[1].inner_text() if len(cells) > 1 else ""
@@ -269,4 +269,5 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
+
 
