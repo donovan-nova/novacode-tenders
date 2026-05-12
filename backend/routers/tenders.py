@@ -152,3 +152,39 @@ async def rescore_tender(tender_id: int):
         return {"score": score, "reason": reason}
     finally:
         await db.close()
+
+@router.post("/import")
+async def import_tender(tender: dict):
+    """Accept a tender from external scraper (GitHub Actions)."""
+    from datetime import datetime
+    db = await get_db()
+    try:
+        await db.execute("""
+            INSERT OR IGNORE INTO tenders 
+            (external_id, title, department, country, category, value_raw, value_zar,
+             deadline, published, reference, source, portal_url, description, status, score, score_reason)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            tender.get("external_id", ""),
+            tender.get("title", "Untitled"),
+            tender.get("department", "Unknown"),
+            tender.get("country", "ZA"),
+            tender.get("category", "ICT & Services"),
+            tender.get("value_raw"),
+            tender.get("value_zar"),
+            tender.get("deadline"),
+            tender.get("published", datetime.now().strftime("%Y-%m-%d")),
+            tender.get("reference", ""),
+            tender.get("source", "External"),
+            tender.get("portal_url", ""),
+            tender.get("description", ""),
+            tender.get("status", "active"),
+            tender.get("score", 50),
+            tender.get("score_reason", "Imported from scraper"),
+        ))
+        await db.commit()
+        return {"status": "ok"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        await db.close()
