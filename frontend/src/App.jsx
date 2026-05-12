@@ -1,3 +1,4 @@
+import TenderAssistant from "./TenderAssistant";
 import { useState, useEffect, useCallback } from "react";
 import {
   fetchTenders, fetchStats, fetchSources, fetchAlerts,
@@ -341,7 +342,7 @@ export default function App() {
 
       {/* Tabs */}
       <nav className="tabs">
-        {["tenders", "sources", "alerts"].map((t) => (
+        {["tenders", "sources", "alerts", "respond"].map((t) => (
           <button
             key={t}
             className={`tab${tab === t ? " active" : ""}`}
@@ -419,12 +420,17 @@ export default function App() {
       )}
 
       {tab === "sources" && <SourcesTab sources={sources} />}
+      {tab === "respond" && <TenderAssistant />}
+
       {tab === "alerts" && (
         <AlertsTab alerts={alerts} onAdd={handleAddAlert} onDelete={handleDeleteAlert} />
       )}
     </div>
   );
 }
+
+
+
 
 
 
