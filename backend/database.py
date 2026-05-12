@@ -1,19 +1,16 @@
 import os
 import aiosqlite
-import os
 import logging
 
 logger = logging.getLogger(__name__)
-
 DB_PATH = os.getenv("DB_PATH", "tenders.db")
-
 
 async def get_db():
     return await aiosqlite.connect(DB_PATH)
 
-
 async def init_db():
-    os.makedirs(os.path.dirname(DB_PATH) if os.path.dirname(DB_PATH) else ".", exist_ok=True)`n    async with aiosqlite.connect(DB_PATH) as db:
+    os.makedirs(os.path.dirname(DB_PATH) if os.path.dirname(DB_PATH) else ".", exist_ok=True)
+    async with aiosqlite.connect(DB_PATH) as db:
         await db.executescript("""
             CREATE TABLE IF NOT EXISTS tenders (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -104,4 +101,6 @@ async def init_db():
 
         await db.commit()
         logger.info("Database initialised successfully.")
+
+
 
