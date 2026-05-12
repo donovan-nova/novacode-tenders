@@ -76,7 +76,7 @@ async def scrape_etenders(page) -> list[dict]:
                 ref = await cells[2].inner_text() if len(cells) > 2 else ""
 
                 score = score_relevance(title)
-                if score < 15:  # Skip irrelevant tenders
+                if score < 5:  # Skip irrelevant tenders
                     continue
 
                 tenders.append({
@@ -168,7 +168,7 @@ async def scrape_kenya(page) -> list[dict]:
         await page.wait_for_timeout(5000)
 
         # Kenya uses Vue.js - wait for content
-        await page.wait_for_selector("table, .tender-list, .v-data-table", timeout=10000)
+        await page.wait_for_timeout(8000)
         rows = await page.query_selector_all("table tbody tr")
         print(f"Kenya: found {len(rows)} rows after JS load")
 
@@ -182,7 +182,7 @@ async def scrape_kenya(page) -> list[dict]:
                 if not title or len(title) < 5:
                     continue
                 score = score_relevance(title)
-                if score < 10:
+                if score < 5:
                     continue
                 dept = await cells[0].inner_text() if cells else ""
                 deadline = await cells[2].inner_text() if len(cells) > 2 else ""
@@ -269,3 +269,4 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
+
