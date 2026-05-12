@@ -66,7 +66,7 @@ export default function TenderAssistant() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           model: "claude-sonnet-4-20250514",
-          max_tokens: 1000,
+          max_tokens: 4000,
           system: `You are a tender response specialist for NovaCode Consulting. 
 Here is NovaCode's company profile:
 ${NOVACODE_PROFILE}
@@ -119,7 +119,7 @@ Respond ONLY with valid JSON, no markdown, no preamble.`,
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           model: "claude-sonnet-4-20250514",
-          max_tokens: 1000,
+          max_tokens: 4000,
           system: `You are a tender response writer for NovaCode Consulting.
 ${NOVACODE_PROFILE}
 Write professional, winning tender responses. Be specific, confident, and tailor every section to NovaCode's actual capabilities.
@@ -478,4 +478,5 @@ function DraftSection({ label, text }) {
     </div>
   );
 }
+
 
