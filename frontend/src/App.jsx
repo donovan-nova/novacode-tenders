@@ -318,7 +318,7 @@ export default function App() {
       {/* Header */}
       <header className="header">
         <div className="header-brand">
-          <img src="/logo.png" alt="NovaCode" style={{height:"52px",width:"auto",display:"block"}} />
+          <img src="/logo.png" alt="NovaCode" style={{height:"64px",width:"auto",display:"block",mixBlendMode:"screen"}} />
           <div>
             <div className="brand-name">Tender Intelligence</div>
             <div className="brand-sub">NovaCode · Africa Procurement Monitor</div>
@@ -425,6 +425,7 @@ export default function App() {
     </div>
   );
 }
+
 
 
 

@@ -41,7 +41,7 @@ body {
 .header-brand { display: flex; align-items: center; gap: 12px; }
 .logo-mark {
   width: 36px; height: 36px; border-radius: 8px;
-  background: #1a1a1a; border: 1px solid #333;
+  background: #0D0D0D; border: none;
   display: flex; align-items: center; justify-content: center;
   font-size: 12px; font-weight: 600; color: var(--orange);
   letter-spacing: -0.5px;
@@ -245,3 +245,4 @@ body {
   .stats-bar { grid-template-columns: repeat(2, 1fr); }
   .sources-grid { grid-template-columns: repeat(2, 1fr); }
 }
+
