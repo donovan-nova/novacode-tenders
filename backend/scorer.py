@@ -71,7 +71,7 @@ Respond ONLY with valid JSON, no other text:
                     "content-type": "application/json",
                 },
                 json={
-                    "model": "claude-sonnet-4-20250514",
+                    "model": "claude-sonnet-4-6",
                     "max_tokens": 300,
                     "messages": [{"role": "user", "content": prompt}],
                 },
@@ -129,3 +129,4 @@ def _rule_based_score(tender: dict) -> tuple[int, str]:
     score = min(100, score)
     reason = f"Rule-based score. Matched keywords: {', '.join(matched[:4]) if matched else 'none'}."
     return score, reason
+
