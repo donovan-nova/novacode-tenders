@@ -43,8 +43,9 @@ def parse_date(date_str: str) -> str | None:
     return None
 
 async def scrape_etenders(page) -> list[dict]:
-    """Scrape SA eTenders portal using real browser."""
-    tenders = []
+    """Scrape SA eTenders portal - search multiple keywords."""
+    all_tenders = {}
+    search_terms = ["software", "ICT", "data", "digital", "system", "technology", "analytics", "platform"]
     print("Scraping etenders.gov.za...")
     try:
         await page.goto("https://www.etenders.gov.za/Home/opportunities?id=1", timeout=30000)
@@ -269,5 +270,6 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
+
 
 
