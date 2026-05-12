@@ -31,7 +31,7 @@ async def fetch_sa_ocds(days_back: int = 30) -> list[dict]:
             # Try current month and previous month
             for months_back in range(0, 3):
                 target = datetime.now() - timedelta(days=30 * months_back)
-                filename = target.strftime("%m%Y") + ".xlsx"
+                filename = "01" + target.strftime("%m%Y") + ".xlsx"
                 url = f"https://data.etenders.gov.za/Home/DownloadFile/?fileName={filename}"
                 logger.info(f"SA OCDS: trying {url}")
                 resp = await client.get(url)
@@ -322,6 +322,7 @@ def _parse_date(date_str) -> str:
 
 def _slugify(text: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")
+
 
 
 
