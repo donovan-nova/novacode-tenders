@@ -120,6 +120,8 @@ async def fetch_kenya_tenders() -> list[dict]:
             soup = BeautifulSoup(resp.text, "html.parser")
 
             rows = soup.select("table tbody tr")
+            logger.info(f"Kenya: found {len(rows)} rows, page length {len(resp.text)}")
+            logger.info(f"Kenya HTML snippet: {resp.text[:500]}")
             for row in rows[:50]:
                 cols = row.find_all("td")
                 if len(cols) < 4:
@@ -322,6 +324,7 @@ def _parse_date(date_str) -> str:
 
 def _slugify(text: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")
+
 
 
 
