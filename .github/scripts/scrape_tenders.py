@@ -1,196 +1,189 @@
 """
-NovaCode Tender Scraper
-Runs on GitHub Actions every 6 hours.
-Scrapes SA eTenders and other African portals using Playwright (real browser).
-Posts results to Railway backend API.
+NovaCode Tender Scraper - OCP Data Registry Edition
+Tries 2026 files first, falls back to 2025. Filters for last 180 days only.
 """
 
 import asyncio
+import gzip
 import json
 import os
 import httpx
-from datetime import datetime
-from playwright.async_api import async_playwright
+from datetime import datetime, timedelta
 
 RAILWAY_API_URL = os.environ.get("RAILWAY_API_URL", "https://novacode-tenders-api-production.up.railway.app")
 
-NOVACODE_KEYWORDS = [
-    "software", "digital", "technology", "IT", "ICT", "system", "platform",
-    "data", "analytics", "artificial intelligence", "AI", "machine learning",
-    "automation", "fintech", "financial technology", "banking", "credit",
-    "loan", "lending", "debt", "collection", "debtors", "payment",
-    "development", "application", "mobile", "web", "portal", "integration",
-    "cloud", "database", "cybersecurity", "security", "compliance",
-    "consulting", "advisory", "management information", "ERP", "CRM",
-    "business intelligence", "reporting", "dashboard", "monitoring",
+SOURCES = [
+    {"country": "ZA", "name": "SA National Treasury", "source": "SA National Treasury (OCDS API)",
+     "portal_url": "https://www.etenders.gov.za/Home/opportunities?id=1",
+     "urls": [
+         "https://data.open-contracting.org/en/publication/143/download?name=2026.jsonl.gz",
+         "https://data.open-contracting.org/en/publication/143/download?name=2025.jsonl.gz",
+     ]},
+    {"country": "KE", "name": "Kenya PPRA", "source": "PPRA Kenya",
+     "portal_url": "https://tenders.go.ke",
+     "urls": [
+         "https://data.open-contracting.org/en/publication/147/download?name=2026.jsonl.gz",
+         "https://data.open-contracting.org/en/publication/147/download?name=2025.jsonl.gz",
+     ]},
+    {"country": "NG", "name": "Nigeria BPP", "source": "Nigeria BPP",
+     "portal_url": "https://www.bpp.gov.ng",
+     "urls": [
+         "https://data.open-contracting.org/en/publication/64/download?name=2026.jsonl.gz",
+         "https://data.open-contracting.org/en/publication/64/download?name=2025.jsonl.gz",
+     ]},
+    {"country": "GH", "name": "Ghana PPA", "source": "Ghana PPA",
+     "portal_url": "https://www.ppaghana.org",
+     "urls": [
+         "https://data.open-contracting.org/en/publication/85/download?name=2026.jsonl.gz",
+         "https://data.open-contracting.org/en/publication/85/download?name=2025.jsonl.gz",
+     ]},
+    {"country": "RW", "name": "Rwanda RPPA", "source": "Rwanda RPPA",
+     "portal_url": "https://www.rppa.gov.rw",
+     "urls": [
+         "https://data.open-contracting.org/en/publication/88/download?name=2026.jsonl.gz",
+         "https://data.open-contracting.org/en/publication/88/download?name=2025.jsonl.gz",
+     ]},
 ]
 
-def score_relevance(title: str, description: str = "") -> int:
-    text = (title + " " + description).lower()
-    matches = sum(1 for kw in NOVACODE_KEYWORDS if kw.lower() in text)
-    return min(100, matches * 15)
+NOVACODE_KEYWORDS = [
+    "software", "digital", "technology", "information technology",
+    "ICT", "system", "platform", "application", "data", "analytics",
+    "artificial intelligence", "machine learning", "automation",
+    "fintech", "financial technology", "banking", "credit", "loan",
+    "lending", "debt", "collection", "payment", "mobile", "web",
+    "portal", "integration", "cloud", "database", "cybersecurity",
+    "security", "compliance", "consulting", "advisory",
+    "management information", "ERP", "CRM", "business intelligence",
+    "reporting", "dashboard", "monitoring", "digital transformation",
+]
 
-def parse_date(date_str: str):
+CUTOFF_DATE = (datetime.now() - timedelta(days=180)).strftime("%Y-%m-%d")
+TODAY = datetime.now().strftime("%Y-%m-%d")
+
+
+def is_relevant(title, description="", category=""):
+    text = (title + " " + description + " " + category).lower()
+    return any(kw.lower() in text for kw in NOVACODE_KEYWORDS)
+
+
+def parse_date(date_str):
     if not date_str:
         return None
-    for fmt in ("%Y-%m-%d", "%d/%m/%Y", "%d-%m-%Y", "%d %B %Y", "%B %d, %Y", "%d %b %Y"):
-        try:
-            return datetime.strptime(date_str.strip(), fmt).strftime("%Y-%m-%d")
-        except ValueError:
-            continue
-    return None
+    return str(date_str)[:10]
 
-def make_tender(external_id, title, dept, deadline, ref, source, portal_url):
+
+def is_recent(published, deadline):
+    if deadline and deadline >= TODAY:
+        return True
+    if published and published >= CUTOFF_DATE:
+        return True
+    return False
+
+
+def extract_tender(release, country, source, portal_url):
+    tender_obj = release.get("tender", {})
+    buyer = release.get("buyer", {})
+    planning = release.get("planning", {})
+    budget = planning.get("budget", {})
+
+    title = tender_obj.get("title", "") or ""
+    if not title or len(title) < 5:
+        return None
+
+    description = tender_obj.get("description", "") or ""
+    category = tender_obj.get("mainProcurementCategory", "") or ""
+
+    if not is_relevant(title, description, category):
+        return None
+
+    published = parse_date(release.get("date"))
+    deadline = parse_date(tender_obj.get("tenderPeriod", {}).get("endDate"))
+
+    if not is_recent(published, deadline):
+        return None
+
+    budget_amount = budget.get("amount", {})
+    if isinstance(budget_amount, dict):
+        value = budget_amount.get("amount")
+        currency = budget_amount.get("currency", "")
+    else:
+        value = None
+        currency = ""
+
+    value_raw = f"{currency} {value:,.0f}" if value and currency else None
+    value_zar = float(value) if value and country == "ZA" else None
+
+    ocid = release.get("ocid", "")
+    ref = tender_obj.get("id", "") or ocid
+    dept = buyer.get("name", "Unknown")
+
     return {
-        "external_id": external_id,
+        "external_id": f"{country}-OCP-{(ocid or ref)[:40]}",
         "title": title[:500],
         "department": dept[:200],
-        "country": "ZA",
+        "country": country,
         "category": "ICT & Services",
-        "value_raw": None,
-        "value_zar": None,
-        "deadline": parse_date(deadline),
-        "published": datetime.now().strftime("%Y-%m-%d"),
+        "value_raw": value_raw,
+        "value_zar": value_zar,
+        "deadline": deadline,
+        "published": published,
         "reference": ref[:100],
         "source": source,
         "portal_url": portal_url,
-        "description": title[:500],
+        "description": description[:500] or title[:500],
         "status": "active",
     }
 
-async def scrape_etenders(page) -> list[dict]:
-    """Scrape SA eTenders by searching multiple keywords."""
-    seen = {}
-    print("Scraping etenders.gov.za...")
-    search_terms = ["software", "ICT", "data", "digital", "technology", "analytics", "system", "platform", "AI", "consulting"]
 
-    for term in search_terms:
-        try:
-            await page.goto("https://www.etenders.gov.za/Home/opportunities?id=1", timeout=30000)
-            await page.wait_for_timeout(3000)
-
-            # Try to fill search box
-            search_selectors = [
-                "input[placeholder*='earch']",
-                "input[type='search']",
-                "#searchText",
-                "input[name='search']",
-                ".search-input",
-            ]
-            filled = False
-            for sel in search_selectors:
-                try:
-                    box = await page.query_selector(sel)
-                    if box:
-                        await box.fill(term)
-                        await page.keyboard.press("Enter")
-                        await page.wait_for_timeout(2000)
-                        filled = True
-                        break
-                except Exception:
-                    continue
-
-            rows = await page.query_selector_all("table tbody tr")
-            print(f"  '{term}': {len(rows)} rows (search {'applied' if filled else 'not applied'})")
-
-            for row in rows[:100]:
-                try:
-                    cells = await row.query_selector_all("td")
-                    if len(cells) < 2:
-                        continue
-                    title = (await cells[1].inner_text()).strip() if len(cells) > 1 else (await cells[0].inner_text()).strip()
-                    if not title or len(title) < 5:
-                        continue
-                    dept = (await cells[0].inner_text()).strip() if cells else ""
-                    deadline = (await cells[3].inner_text()).strip() if len(cells) > 3 else ""
-                    ref = (await cells[2].inner_text()).strip() if len(cells) > 2 else ""
-                    key = ref or title[:50]
-                    if key not in seen:
-                        seen[key] = make_tender(
-                            f"ZA-ET-{key[:40]}",
-                            title, dept, deadline, ref,
-                            "SA National Treasury (OCDS API)",
-                            "https://www.etenders.gov.za/Home/opportunities?id=1"
-                        )
-                except Exception:
-                    continue
-        except Exception as e:
-            print(f"  '{term}' error: {e}")
-            continue
-
-    tenders = list(seen.values())
-    print(f"etenders: scraped {len(tenders)} unique tenders")
-    return tenders
-
-
-async def scrape_gpw(page) -> list[dict]:
-    """Scrape GPW Government Tender Bulletin."""
+async def download_and_parse(source):
     tenders = []
-    print("Scraping GPW Tender Bulletin...")
-    try:
-        await page.goto("https://www.gpwonline.co.za/Tenders/Pages/Bids-and-Tenders.aspx", timeout=30000)
-        await page.wait_for_timeout(4000)
-        rows = await page.query_selector_all("table tr, .ms-listviewtable tr")
-        print(f"GPW: found {len(rows)} rows")
-        for row in rows[1:100]:
+    country = source["country"]
+    print(f"\nProcessing {source['name']}...")
+
+    async with httpx.AsyncClient(timeout=120, follow_redirects=True) as client:
+        for url in source["urls"]:
+            year = "2026" if "2026" in url else "2025"
             try:
-                cells = await row.query_selector_all("td")
-                if len(cells) < 2:
+                resp = await client.get(url, headers={"User-Agent": "NovaCode-TenderMonitor/1.0 (contact@nova-code.co)"})
+                if resp.status_code != 200:
+                    print(f"  {year}: HTTP {resp.status_code}")
                     continue
-                title = (await cells[0].inner_text()).strip()
-                if not title or len(title) < 5:
+
+                content = resp.content
+                if len(content) < 100:
+                    print(f"  {year}: Empty file, trying next")
                     continue
-                dept = (await cells[1].inner_text()).strip() if len(cells) > 1 else ""
-                deadline = (await cells[3].inner_text()).strip() if len(cells) > 3 else ""
-                ref = (await cells[2].inner_text()).strip() if len(cells) > 2 else ""
-                tenders.append(make_tender(
-                    f"ZA-GPW-{ref[:30] or title[:30]}",
-                    title, dept, deadline, ref,
-                    "SA National Treasury (OCDS API)",
-                    "https://www.gpwonline.co.za/Tenders/Pages/Bids-and-Tenders.aspx"
-                ))
-            except Exception:
+
+                print(f"  {year}: Downloaded {len(content)/1024:.0f} KB")
+                decompressed = gzip.decompress(content)
+                lines = decompressed.decode("utf-8").strip().split("\n")
+                print(f"  {year}: Processing {len(lines)} records...")
+
+                found = 0
+                for line in lines:
+                    if not line.strip():
+                        continue
+                    try:
+                        release = json.loads(line)
+                        tender = extract_tender(release, country, source["source"], source["portal_url"])
+                        if tender:
+                            tenders.append(tender)
+                            found += 1
+                    except Exception:
+                        continue
+
+                print(f"  {year}: {found} relevant recent tenders")
+                if found > 0 and year == "2026":
+                    break
+
+            except Exception as e:
+                print(f"  {year} error: {e}")
                 continue
-    except Exception as e:
-        print(f"GPW error: {e}")
-    print(f"GPW: scraped {len(tenders)} tenders")
+
     return tenders
 
 
-async def scrape_kenya(page) -> list[dict]:
-    """Scrape Kenya PPRA tenders portal."""
-    tenders = []
-    print("Scraping Kenya PPRA...")
-    try:
-        await page.goto("https://tenders.go.ke/website/tenders/index", timeout=30000)
-        await page.wait_for_timeout(8000)
-        rows = await page.query_selector_all("table tbody tr")
-        print(f"Kenya: found {len(rows)} rows after JS load")
-        for row in rows[:50]:
-            try:
-                cells = await row.query_selector_all("td")
-                if len(cells) < 2:
-                    continue
-                title = (await cells[1].inner_text()).strip() if len(cells) > 1 else (await cells[0].inner_text()).strip()
-                if not title or len(title) < 5:
-                    continue
-                dept = (await cells[0].inner_text()).strip() if cells else ""
-                deadline = (await cells[2].inner_text()).strip() if len(cells) > 2 else ""
-                tenders.append(make_tender(
-                    f"KE-PPRA-{title[:40]}",
-                    title, dept, deadline, "",
-                    "PPRA Kenya",
-                    "https://tenders.go.ke"
-                ))
-            except Exception:
-                continue
-    except Exception as e:
-        print(f"Kenya error: {e}")
-    print(f"Kenya: scraped {len(tenders)} tenders")
-    return tenders
-
-
-async def post_tenders_to_api(tenders: list[dict]) -> int:
+async def post_tenders_to_api(tenders):
     if not tenders:
         return 0
     added = 0
@@ -204,41 +197,30 @@ async def post_tenders_to_api(tenders: list[dict]) -> int:
                 )
                 if resp.status_code in (200, 201):
                     added += 1
-                elif resp.status_code == 409:
-                    pass
-                else:
-                    print(f"API {resp.status_code}: {tender.get('title', '')[:50]}")
-            except Exception as e:
-                print(f"POST error: {e}")
+            except Exception:
+                continue
     return added
 
 
 async def main():
     all_tenders = []
-    async with async_playwright() as p:
-        browser = await p.chromium.launch(
-            headless=True,
-            args=["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"]
-        )
-        context = await browser.new_context(
-            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36",
-            ignore_https_errors=True,
-        )
-        page = await context.new_page()
+    for source in SOURCES:
+        tenders = await download_and_parse(source)
+        all_tenders.extend(tenders)
 
-        etenders = await scrape_etenders(page)
-        all_tenders.extend(etenders)
+    seen = {}
+    for t in all_tenders:
+        seen[t["external_id"]] = t
+    unique = list(seen.values())
 
-        gpw = await scrape_gpw(page)
-        all_tenders.extend(gpw)
+    print(f"\n{'='*50}")
+    print(f"Total relevant recent tenders: {len(unique)}")
+    for c in ["ZA", "KE", "NG", "GH", "RW"]:
+        count = sum(1 for t in unique if t["country"] == c)
+        if count:
+            print(f"  {c}: {count}")
 
-        kenya = await scrape_kenya(page)
-        all_tenders.extend(kenya)
-
-        await browser.close()
-
-    print(f"\nTotal tenders scraped: {len(all_tenders)}")
-    added = await post_tenders_to_api(all_tenders)
+    added = await post_tenders_to_api(unique)
     print(f"New tenders added to dashboard: {added}")
 
 
