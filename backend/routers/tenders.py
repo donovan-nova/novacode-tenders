@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, BackgroundTasks
 from database import get_db
 from scorer import score_tender
 from datetime import datetime
@@ -64,6 +64,14 @@ async def list_tenders(
         await db.close()
 
 
+@router.post("/sync")
+async def trigger_sync(background_tasks: BackgroundTasks):
+    """Manually trigger a full sync from all sources."""
+    from scheduler import run_all_syncs
+    background_tasks.add_task(run_all_syncs)
+    return {"status": "sync started", "message": "Fetching tenders in background — refresh in 30 seconds"}
+
+
 @router.get("/stats/summary")
 async def tender_summary():
     db = await get_db()
@@ -72,7 +80,7 @@ async def tender_summary():
         c2 = await db.fetchrow("SELECT COUNT(*) FROM tenders WHERE score >= 80 AND status='active'")
         c3 = await db.fetchrow("SELECT COALESCE(SUM(value_zar), 0) FROM tenders WHERE country='ZA' AND status='active'")
         c4 = await db.fetchrow("""
-            SELECT COUNT(*) FROM tenders 
+            SELECT COUNT(*) FROM tenders
             WHERE status='active' AND deadline >= CURRENT_DATE AND deadline <= CURRENT_DATE + INTERVAL '7 days'
         """)
         return {
@@ -177,7 +185,7 @@ async def import_tender(tender: dict):
             tender.get("category", "ICT & Services"),
             tender.get("value_raw"),
             tender.get("value_zar"),
-            tender.get("deadline"),
+            tender.get("deadline") or None,
             tender.get("published", datetime.now().strftime("%Y-%m-%d")),
             tender.get("reference", ""),
             tender.get("source", "External"),
@@ -192,5 +200,3 @@ async def import_tender(tender: dict):
         raise HTTPException(status_code=500, detail=str(e))
     finally:
         await db.close()
-
-
