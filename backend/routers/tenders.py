@@ -191,3 +191,4 @@ async def import_tender(tender: dict):
         raise HTTPException(status_code=500, detail=str(e))
     finally:
         await db.close()
+
