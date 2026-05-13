@@ -7,6 +7,7 @@ router = APIRouter()
 
 
 @router.get("")
+@router.get("/")
 async def list_tenders(
     search: str = "",
     country: str = "",
@@ -191,4 +192,5 @@ async def import_tender(tender: dict):
         raise HTTPException(status_code=500, detail=str(e))
     finally:
         await db.close()
+
 
