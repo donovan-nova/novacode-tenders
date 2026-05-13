@@ -160,11 +160,12 @@ async def import_tender(tender: dict):
     db = await get_db()
     try:
         await db.execute("""
-            INSERT OR IGNORE INTO tenders 
+            INSERT INTO tenders
             (external_id, title, department, country, category, value_raw, value_zar,
              deadline, published, reference, source, portal_url, description, status, score, score_reason)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, (
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+            ON CONFLICT (external_id) DO NOTHING
+        """,
             tender.get("external_id", ""),
             tender.get("title", "Untitled"),
             tender.get("department", "Unknown"),
@@ -181,10 +182,10 @@ async def import_tender(tender: dict):
             tender.get("status", "active"),
             tender.get("score", 50),
             tender.get("score_reason", "Imported from scraper"),
-        ))
-        await db.commit()
+        )
         return {"status": "ok"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
     finally:
         await db.close()
+
