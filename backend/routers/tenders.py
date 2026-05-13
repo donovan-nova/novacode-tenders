@@ -1,65 +1,64 @@
-from fastapi import APIRouter, Query, HTTPException, BackgroundTasks
+from fastapi import APIRouter, HTTPException, Depends
 from database import get_db
-from scheduler import run_all_syncs
 from scorer import score_tender
-import json
+from datetime import datetime
 
 router = APIRouter()
 
 
-@router.get("/")
+@router.get("")
 async def list_tenders(
-    country: str = Query(None),
-    category: str = Query(None),
-    min_score: int = Query(0),
-    status: str = Query("active"),
-    search: str = Query(None),
-    limit: int = Query(50),
-    offset: int = Query(0),
+    search: str = "",
+    country: str = "",
+    category: str = "",
+    match: str = "any",
+    limit: int = 50,
+    offset: int = 0,
 ):
     db = await get_db()
     try:
-        conditions = ["status = ?"]
-        params = [status]
+        conditions = ["status = 'active'"]
+        params = []
+        p = 1
 
-        if country:
-            conditions.append("country = ?")
-            params.append(country)
-        if category:
-            conditions.append("category = ?")
-            params.append(category)
-        if min_score:
-            conditions.append("score >= ?")
-            params.append(min_score)
         if search:
-            conditions.append("(title LIKE ? OR department LIKE ? OR description LIKE ?)")
-            like = f"%{search}%"
-            params.extend([like, like, like])
+            conditions.append(f"(title ILIKE ${p} OR department ILIKE ${p})")
+            params.append(f"%{search}%")
+            p += 1
+        if country:
+            conditions.append(f"country = ${p}")
+            params.append(country)
+            p += 1
+        if category:
+            conditions.append(f"category = ${p}")
+            params.append(category)
+            p += 1
+        if match == "high":
+            conditions.append(f"score >= 70")
 
         where = " AND ".join(conditions)
-        params.extend([limit, offset])
+        params_with_limit = params + [limit, offset]
 
-        cursor = await db.execute(
+        rows = await db.fetch(
             f"""SELECT id, external_id, title, department, country, category,
                 value_raw, value_zar, deadline, published, reference, source,
                 portal_url, score, score_reason, status, created_at
             FROM tenders WHERE {where}
-            ORDER BY score DESC, deadline ASC
-            LIMIT ? OFFSET ?""",
-            params,
+            ORDER BY score DESC, deadline ASC NULLS LAST
+            LIMIT ${p} OFFSET ${p+1}""",
+            *params_with_limit,
         )
-        rows = await cursor.fetchall()
-        cols = [d[0] for d in cursor.description]
-        tenders = [dict(zip(cols, row)) for row in rows]
+        tenders = [dict(r) for r in rows]
 
-        # Total count
-        count_cursor = await db.execute(
+        count_row = await db.fetchrow(
             f"SELECT COUNT(*) FROM tenders WHERE {where}",
-            params[:-2],
+            *params,
         )
-        total = (await count_cursor.fetchone())[0]
+        total = count_row[0]
 
         return {"tenders": tenders, "total": total, "limit": limit, "offset": offset}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
     finally:
         await db.close()
 
@@ -68,95 +67,99 @@ async def list_tenders(
 async def tender_summary():
     db = await get_db()
     try:
-        stats = {}
-
-        c = await db.execute("SELECT COUNT(*) FROM tenders WHERE status='active'")
-        stats["total_active"] = (await c.fetchone())[0]
-
-        c = await db.execute("SELECT COUNT(*) FROM tenders WHERE score >= 80 AND status='active'")
-        stats["high_matches"] = (await c.fetchone())[0]
-
-        c = await db.execute(
-            "SELECT COUNT(*) FROM tenders WHERE status='active' AND deadline BETWEEN date('now') AND date('now', '+7 days')"
-        )
-        stats["closing_this_week"] = (await c.fetchone())[0]
-
-        c = await db.execute(
-            "SELECT SUM(value_zar) FROM tenders WHERE status='active' AND country='ZA' AND value_zar IS NOT NULL"
-        )
-        val = (await c.fetchone())[0]
-        stats["total_value_zar"] = round(val or 0)
-
-        c = await db.execute(
-            "SELECT country, COUNT(*) as cnt FROM tenders WHERE status='active' GROUP BY country ORDER BY cnt DESC"
-        )
-        rows = await c.fetchall()
-        stats["by_country"] = [{"country": r[0], "count": r[1]} for r in rows]
-
-        c = await db.execute(
-            "SELECT category, COUNT(*) as cnt FROM tenders WHERE status='active' GROUP BY category ORDER BY cnt DESC LIMIT 8"
-        )
-        rows = await c.fetchall()
-        stats["by_category"] = [{"category": r[0], "count": r[1]} for r in rows]
-
-        c = await db.execute("SELECT completed_at, tenders_new, source FROM sync_log WHERE status='success' ORDER BY completed_at DESC LIMIT 1")
-        row = await c.fetchone()
-        stats["last_sync"] = {"at": row[0], "new": row[1], "source": row[2]} if row else None
-
-        return stats
+        c1 = await db.fetchrow("SELECT COUNT(*) FROM tenders WHERE status='active'")
+        c2 = await db.fetchrow("SELECT COUNT(*) FROM tenders WHERE score >= 80 AND status='active'")
+        c3 = await db.fetchrow("SELECT COALESCE(SUM(value_zar), 0) FROM tenders WHERE country='ZA' AND status='active'")
+        c4 = await db.fetchrow("""
+            SELECT COUNT(*) FROM tenders 
+            WHERE status='active' AND deadline >= CURRENT_DATE AND deadline <= CURRENT_DATE + INTERVAL '7 days'
+        """)
+        return {
+            "active_tenders": c1[0],
+            "high_matches": c2[0],
+            "total_value_zar": float(c3[0]),
+            "closing_this_week": c4[0],
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
     finally:
         await db.close()
+
+
+@router.get("/stats/by-country")
+async def tenders_by_country():
+    db = await get_db()
+    try:
+        rows = await db.fetch(
+            "SELECT country, COUNT(*) as count FROM tenders WHERE status='active' GROUP BY country ORDER BY count DESC"
+        )
+        return [dict(r) for r in rows]
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        await db.close()
+
+
+@router.get("/stats/by-category")
+async def tenders_by_category():
+    db = await get_db()
+    try:
+        rows = await db.fetch(
+            "SELECT category, COUNT(*) as count FROM tenders WHERE status='active' GROUP BY category ORDER BY count DESC"
+        )
+        return [dict(r) for r in rows]
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        await db.close()
+
+
+@router.get("/stats/last-sync")
+async def last_sync():
+    return {"last_sync": None, "status": "ok"}
 
 
 @router.get("/{tender_id}")
 async def get_tender(tender_id: int):
     db = await get_db()
     try:
-        cursor = await db.execute(
-            "SELECT * FROM tenders WHERE id = ?", (tender_id,)
-        )
-        row = await cursor.fetchone()
+        row = await db.fetchrow("SELECT * FROM tenders WHERE id = $1", tender_id)
         if not row:
             raise HTTPException(status_code=404, detail="Tender not found")
-        cols = [d[0] for d in cursor.description]
-        return dict(zip(cols, row))
+        return dict(row)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
     finally:
         await db.close()
 
 
-@router.post("/sync")
-async def trigger_sync(background_tasks: BackgroundTasks):
-    """Manually trigger a full sync cycle."""
-    background_tasks.add_task(run_all_syncs)
-    return {"message": "Sync triggered", "status": "running"}
-
-
-@router.post("/{tender_id}/rescore")
+@router.post("/{tender_id}/score")
 async def rescore_tender(tender_id: int):
-    """Re-run AI scoring on a specific tender."""
     db = await get_db()
     try:
-        cursor = await db.execute("SELECT * FROM tenders WHERE id = ?", (tender_id,))
-        row = await cursor.fetchone()
+        row = await db.fetchrow("SELECT * FROM tenders WHERE id = $1", tender_id)
         if not row:
             raise HTTPException(status_code=404, detail="Tender not found")
-        cols = [d[0] for d in cursor.description]
-        tender = dict(zip(cols, row))
-
+        tender = dict(row)
         score, reason = await score_tender(tender)
         await db.execute(
-            "UPDATE tenders SET score=?, score_reason=? WHERE id=?",
-            (score, reason, tender_id)
+            "UPDATE tenders SET score=$1, score_reason=$2 WHERE id=$3",
+            score, reason, tender_id
         )
-        await db.commit()
         return {"score": score, "reason": reason}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
     finally:
         await db.close()
+
 
 @router.post("/import")
 async def import_tender(tender: dict):
     """Accept a tender from external scraper (GitHub Actions)."""
-    from datetime import datetime
     db = await get_db()
     try:
         await db.execute("""
@@ -188,4 +191,3 @@ async def import_tender(tender: dict):
         raise HTTPException(status_code=500, detail=str(e))
     finally:
         await db.close()
-
